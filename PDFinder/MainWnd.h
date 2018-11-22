@@ -13,6 +13,7 @@ private:
 	QLineEdit * m_le_find_phrase;
 	QTreeWidget * m_tree_result;
 	QLabel *m_lblResult;
+	QProgressBar *m_progress;
 private slots:
 	void browseDirectory();
 	void startSearch();

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "tmp\moc_MainWnd.cpp"
 
+QMutex mutex;
 
 MainWnd::MainWnd()
 {
@@ -23,6 +24,9 @@ MainWnd::MainWnd()
 
 	m_lblResult = new QLabel("Result", this);
 
+	m_progress = new QProgressBar(this);
+	m_progress->setVisible(false);
+
 	m_tree_result = new QTreeWidget(this);
 	m_tree_result->setHeaderHidden(true);
 
@@ -37,6 +41,7 @@ MainWnd::MainWnd()
 	ltMain->addLayout(lbPhrase);
 	ltMain->addWidget(btnSearch);
 	ltMain->addWidget(m_lblResult);
+	ltMain->addWidget(m_progress);
 	ltMain->addWidget(m_tree_result);
 
 	centralwidget->setLayout(ltMain);
@@ -44,6 +49,12 @@ MainWnd::MainWnd()
 	connect(btnBrowse, &QPushButton::released, this, &MainWnd::browseDirectory);
 	connect(btnSearch, &QPushButton::released, this, &MainWnd::startSearch);
 	connect(m_tree_result, &QTreeWidget::itemDoubleClicked, this, &MainWnd::openDocument);
+
+#ifdef _DEBUG
+	m_le_find_phrase->setText("37");
+	m_le_root_path->setText("C:/Work/UpWork/PDFinder");
+#endif // DEBUG
+
 }
 
 
@@ -72,12 +83,16 @@ void MainWnd::startSearch()
 			list_file.push_back(it.fileInfo());
 		}
 	}
+	m_progress->setVisible(true);
+	m_progress->setRange(0, list_file.size());
+	m_progress->setValue(0);
 
 	struct PDFProcessor
 	{
-		PDFProcessor(QString searchtext, QTreeWidget *tree)
+		PDFProcessor(QString searchtext, QTreeWidget *tree, QProgressBar *bar)
 			: m_searchtext(searchtext),
-			m_tree(tree)
+			m_tree(tree),
+			m_bar(bar)
 		{ }
 
 		typedef QFileInfo result_type;
@@ -119,15 +134,23 @@ void MainWnd::startSearch()
 				}
 
 				QFile::remove(txtPath);
+
+// 				m_bar->blockSignals(true);
+// 				mutex.lock();
+				int value = m_bar->value() + 1;
+				QMetaObject::invokeMethod(m_bar, "setValue", Qt::QueuedConnection, Q_ARG(int, value));
+// 				m_bar->blockSignals(false);
+// 				mutex.unlock();
 			}
 			return file_path;
 		}
 
 		QString m_searchtext;
 		QTreeWidget *m_tree;
+		QProgressBar *m_bar;
 	};
 
-	QtConcurrent::map(list_file, PDFProcessor(m_le_find_phrase->text(), m_tree_result));
+	QtConcurrent::mapped(list_file, PDFProcessor(m_le_find_phrase->text(), m_tree_result, m_progress));
 
 	m_lblResult->setText("Result: [" + QString::number(m_tree_result->topLevelItemCount())+" files\t"+ QString::number(count_entries) + " entries]");
 }
