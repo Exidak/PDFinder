@@ -61,30 +61,45 @@ void MainWnd::startSearch()
 {
 	int count_entries = 0;
 	m_tree_result->clear();
+
+	QVector<QFileInfo> list_file;
 	QDirIterator it(m_le_root_path->text(),QDirIterator::Subdirectories);
 	while (it.hasNext()) 
 	{
 		it.next();
 		if (it.fileInfo().suffix() == "pdf")
 		{
+			list_file.push_back(it.fileInfo());
+		}
+	}
+
+	struct PDFProcessor
+	{
+		PDFProcessor(QString searchtext, QTreeWidget *tree)
+			: m_searchtext(searchtext),
+			m_tree(tree)
+		{ }
+
+		typedef QFileInfo result_type;
+
+		QFileInfo operator()(const QFileInfo & file_path)
+		{
 			QProcess gzip;
-			gzip.start("pdftotext.exe", QStringList() << it.fileInfo().absoluteFilePath());
-			if (!gzip.waitForFinished(600000))
-				continue;
-			else
+			gzip.start("pdftotext.exe", QStringList() << file_path.absoluteFilePath());
+			if (gzip.waitForFinished(600000))
 			{
-				QString txtPath = it.fileInfo().absolutePath() + "\/" + it.fileInfo().completeBaseName() + ".txt";
-				
+				QString txtPath = file_path.absolutePath() + "/" + file_path.completeBaseName() + ".txt";
+
 				QList<QTreeWidgetItem*> children;
 
 				QFile MyFile(txtPath);
 				MyFile.open(QIODevice::ReadWrite);
 				QTextStream in(&MyFile);
 				QString line;
-				do 
+				do
 				{
 					line = in.readLine();
-					if (line.contains(m_le_find_phrase->text(), Qt::CaseInsensitive))
+					if (line.contains(m_searchtext, Qt::CaseInsensitive))
 					{
 						QTreeWidgetItem *childitem = new QTreeWidgetItem();
 						childitem->setText(0, line);
@@ -96,19 +111,24 @@ void MainWnd::startSearch()
 				if (!children.empty())
 				{
 					QTreeWidgetItem *item = new QTreeWidgetItem();
-					item->setText(0, it.fileInfo().fileName() + " ["+ QString::number(children.size()) +"]");
+					item->setText(0, file_path.fileName() + " [" + QString::number(children.size()) + "]");
 					item->setText(1, QString::number(children.size()));
-					item->setData(0, Qt::UserRole, it.fileInfo().absoluteFilePath());
+					item->setData(0, Qt::UserRole, file_path.absoluteFilePath());
 					item->addChildren(children);
-					m_tree_result->addTopLevelItem(item);
-					count_entries += children.size();
+					m_tree->addTopLevelItem(item);
 				}
 
 				QFile::remove(txtPath);
-
 			}
+			return file_path;
 		}
-	}
+
+		QString m_searchtext;
+		QTreeWidget *m_tree;
+	};
+
+	QtConcurrent::map(list_file, PDFProcessor(m_le_find_phrase->text(), m_tree_result));
+
 	m_lblResult->setText("Result: [" + QString::number(m_tree_result->topLevelItemCount())+" files\t"+ QString::number(count_entries) + " entries]");
 }
 
@@ -116,4 +136,9 @@ void MainWnd::openDocument(QTreeWidgetItem * item, int column)
 {
 	qDebug() << "file:///" + item->data(0, Qt::UserRole).toString();
 	QDesktopServices::openUrl(QUrl("file:///" + item->data(0, Qt::UserRole).toString(), QUrl::TolerantMode));
+}
+
+void searchText(QFileInfo & file_path)
+{
+	
 }

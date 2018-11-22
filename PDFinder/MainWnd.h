@@ -1,4 +1,7 @@
 #pragma once
+
+void searchText(QFileInfo &file_path);
+
 class MainWnd : public QMainWindow
 {
 	Q_OBJECT
