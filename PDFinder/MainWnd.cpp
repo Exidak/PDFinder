@@ -20,7 +20,7 @@ MainWnd::MainWnd()
 	QLabel *lblPhrase = new QLabel("Search for", this);
 	m_le_find_phrase = new QLineEdit(this);
 
-	QPushButton *btnSearch = new QPushButton("Search", this);
+	m_btnSearch = new QPushButton("Search", this);
 
 	m_lblResult = new QLabel("Result", this);
 
@@ -39,7 +39,7 @@ MainWnd::MainWnd()
 
 	ltMain->addLayout(ltPath);
 	ltMain->addLayout(lbPhrase);
-	ltMain->addWidget(btnSearch);
+	ltMain->addWidget(m_btnSearch);
 	ltMain->addWidget(m_lblResult);
 	ltMain->addWidget(m_progress);
 	ltMain->addWidget(m_tree_result);
@@ -47,8 +47,9 @@ MainWnd::MainWnd()
 	centralwidget->setLayout(ltMain);
 
 	connect(btnBrowse, &QPushButton::released, this, &MainWnd::browseDirectory);
-	connect(btnSearch, &QPushButton::released, this, &MainWnd::startSearch);
+	connect(m_btnSearch, &QPushButton::released, this, &MainWnd::startSearch);
 	connect(m_tree_result, &QTreeWidget::itemDoubleClicked, this, &MainWnd::openDocument);
+	connect(m_progress, &QProgressBar::valueChanged, this, &MainWnd::progressChanged);
 
 #ifdef _DEBUG
 	m_le_find_phrase->setText("37");
@@ -70,8 +71,12 @@ void MainWnd::browseDirectory()
 
 void MainWnd::startSearch()
 {
+	m_btnSearch->setEnabled(false);
+	m_le_find_phrase->setEnabled(false);
+
 	int count_entries = 0;
 	m_tree_result->clear();
+	m_lblResult->setText("Result");
 
 	QVector<QFileInfo> list_file;
 	QDirIterator it(m_le_root_path->text(),QDirIterator::Subdirectories);
@@ -150,9 +155,10 @@ void MainWnd::startSearch()
 		QProgressBar *m_bar;
 	};
 
-	QtConcurrent::mapped(list_file, PDFProcessor(m_le_find_phrase->text(), m_tree_result, m_progress));
-
-	m_lblResult->setText("Result: [" + QString::number(m_tree_result->topLevelItemCount())+" files\t"+ QString::number(count_entries) + " entries]");
+	QFutureWatcher<void> watcher;
+	connect(&watcher, SIGNAL(finished()), this, SLOT(searchFinished()));
+	QFuture<void> fut = QtConcurrent::mapped(list_file, PDFProcessor(m_le_find_phrase->text(), m_tree_result, m_progress));
+	watcher.setFuture(fut);
 }
 
 void MainWnd::openDocument(QTreeWidgetItem * item, int column)
@@ -161,7 +167,25 @@ void MainWnd::openDocument(QTreeWidgetItem * item, int column)
 	QDesktopServices::openUrl(QUrl("file:///" + item->data(0, Qt::UserRole).toString(), QUrl::TolerantMode));
 }
 
-void searchText(QFileInfo & file_path)
+void MainWnd::searchFinished()
 {
-	
+	//
+	m_progress->setVisible(false);
+}
+
+void MainWnd::progressChanged(int value)
+{
+	if (value == m_progress->maximum())
+	{
+		m_le_find_phrase->setEnabled(true);
+		m_btnSearch->setEnabled(true);
+		m_progress->hide();
+		int count_entries = 0;
+		QTreeWidgetItemIterator it(m_tree_result, QTreeWidgetItemIterator::NoChildren);
+		while (*it) {
+			count_entries++;
+			++it;
+		}
+		m_lblResult->setText("Result: [" + QString::number(m_tree_result->topLevelItemCount()) + " files\t" + QString::number(count_entries) + " entries]");
+	}
 }
