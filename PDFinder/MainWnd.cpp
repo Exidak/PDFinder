@@ -1,7 +1,8 @@
 #include "stdafx.h"
 #include "tmp\moc_MainWnd.cpp"
 
-QMutex mutex;
+// TODO result saving
+// TODO deep search
 
 MainWnd::MainWnd()
 {
@@ -14,11 +15,13 @@ MainWnd::MainWnd()
 	QLabel *lblPath = new QLabel("Path", this);
 	m_le_root_path = new QLineEdit(this);
 	m_le_root_path->setReadOnly(true);
-	QPushButton *btnBrowse = new QPushButton("browse", this);
+	m_btnBrowse = new QPushButton("browse", this);
 
 	QHBoxLayout *lbPhrase = new QHBoxLayout(this);
 	QLabel *lblPhrase = new QLabel("Search for", this);
 	m_le_find_phrase = new QLineEdit(this);
+
+	m_chb_deep = new QCheckBox("deep search", this);
 
 	m_btnSearch = new QPushButton("Search", this);
 
@@ -32,10 +35,11 @@ MainWnd::MainWnd()
 
 	ltPath->addWidget(lblPath);
 	ltPath->addWidget(m_le_root_path);
-	ltPath->addWidget(btnBrowse);
+	ltPath->addWidget(m_btnBrowse);
 
 	lbPhrase->addWidget(lblPhrase);
 	lbPhrase->addWidget(m_le_find_phrase);
+	lbPhrase->addWidget(m_chb_deep);
 
 	ltMain->addLayout(ltPath);
 	ltMain->addLayout(lbPhrase);
@@ -46,10 +50,9 @@ MainWnd::MainWnd()
 
 	centralwidget->setLayout(ltMain);
 
-	connect(btnBrowse, &QPushButton::released, this, &MainWnd::browseDirectory);
+	connect(m_btnBrowse, &QPushButton::released, this, &MainWnd::browseDirectory);
 	connect(m_btnSearch, &QPushButton::released, this, &MainWnd::startSearch);
 	connect(m_tree_result, &QTreeWidget::itemDoubleClicked, this, &MainWnd::openDocument);
-	connect(m_progress, &QProgressBar::valueChanged, this, &MainWnd::progressChanged);
 
 #ifdef _DEBUG
 	m_le_find_phrase->setText("37");
@@ -61,6 +64,38 @@ MainWnd::MainWnd()
 
 MainWnd::~MainWnd()
 {
+	if (m_textsearch_watcher->isRunning())
+	{
+		m_textsearch_watcher->cancel();
+		m_textsearch_watcher->waitForFinished();
+	}
+	delete m_textsearch_watcher;
+	if (m_filesearch_watcher->isRunning())
+	{
+		m_filesearch_watcher->cancel();
+		m_filesearch_watcher->waitForFinished();
+	}
+	delete m_filesearch_watcher;
+}
+
+QVector<QFileInfo> MainWnd::serachFiles()
+{
+	// search files
+	int count_entries = 0;
+	m_tree_result->clear();
+	m_lblResult->setText("Result");
+
+	QVector<QFileInfo> list_file;
+	QDirIterator it(m_le_root_path->text(), QDirIterator::Subdirectories);
+	while (it.hasNext())
+	{
+		it.next();
+		if (it.fileInfo().suffix() == "pdf")
+		{
+			list_file.push_back(it.fileInfo());
+		}
+	}
+	return list_file;
 }
 
 void MainWnd::browseDirectory()
@@ -71,24 +106,33 @@ void MainWnd::browseDirectory()
 
 void MainWnd::startSearch()
 {
+	m_btnBrowse->setEnabled(false);
 	m_btnSearch->setEnabled(false);
 	m_le_find_phrase->setEnabled(false);
-
-	int count_entries = 0;
-	m_tree_result->clear();
-	m_lblResult->setText("Result");
-
-	QVector<QFileInfo> list_file;
-	QDirIterator it(m_le_root_path->text(),QDirIterator::Subdirectories);
-	while (it.hasNext()) 
-	{
-		it.next();
-		if (it.fileInfo().suffix() == "pdf")
-		{
-			list_file.push_back(it.fileInfo());
-		}
-	}
+	m_chb_deep->setEnabled(false);
 	m_progress->setVisible(true);
+
+	// TODO progressbar
+
+	if (m_filesearch_watcher)
+		delete m_filesearch_watcher;
+	m_filesearch_watcher = new QFutureWatcher<QVector<QFileInfo>>;
+	connect(m_filesearch_watcher, SIGNAL(finished()), this, SLOT(searchFilesFinished()));
+	QFuture<QVector<QFileInfo>> future = QtConcurrent::run(this, &MainWnd::serachFiles);
+	m_filesearch_watcher->setFuture(future);
+}
+
+void MainWnd::openDocument(QTreeWidgetItem * item, int column)
+{
+	qDebug() << "file:///" + item->data(0, Qt::UserRole).toString();
+	QDesktopServices::openUrl(QUrl("file:///" + item->data(0, Qt::UserRole).toString(), QUrl::TolerantMode));
+}
+
+void MainWnd::searchFilesFinished()
+{
+	QVector<QFileInfo> list_file = m_filesearch_watcher->result();
+
+	// search in files
 	m_progress->setRange(0, list_file.size());
 	m_progress->setValue(0);
 
@@ -155,37 +199,37 @@ void MainWnd::startSearch()
 		QProgressBar *m_bar;
 	};
 
-	QFutureWatcher<void> watcher;
-	connect(&watcher, SIGNAL(finished()), this, SLOT(searchFinished()));
+	if (m_textsearch_watcher)
+		delete m_textsearch_watcher;
+	m_textsearch_watcher = new QFutureWatcher<void>;
+	connect(m_textsearch_watcher, SIGNAL(finished()), this, SLOT(searchTextFinished()));
 	QFuture<void> fut = QtConcurrent::mapped(list_file, PDFProcessor(m_le_find_phrase->text(), m_tree_result, m_progress));
-	watcher.setFuture(fut);
+	m_textsearch_watcher->setFuture(fut);
 }
 
-void MainWnd::openDocument(QTreeWidgetItem * item, int column)
+void MainWnd::searchTextFinished()
 {
-	qDebug() << "file:///" + item->data(0, Qt::UserRole).toString();
-	QDesktopServices::openUrl(QUrl("file:///" + item->data(0, Qt::UserRole).toString(), QUrl::TolerantMode));
-}
-
-void MainWnd::searchFinished()
-{
-	//
+	m_btnBrowse->setEnabled(true);
+	m_le_find_phrase->setEnabled(true);
+	m_btnSearch->setEnabled(true);
+	m_chb_deep->setEnabled(true);
 	m_progress->setVisible(false);
+
+	int count_entries = 0;
+	QTreeWidgetItemIterator it(m_tree_result, QTreeWidgetItemIterator::NoChildren);
+	while (*it) {
+		count_entries++;
+		++it;
+	}
+	m_lblResult->setText("Result: [" + QString::number(m_tree_result->topLevelItemCount()) + " files\t" + QString::number(count_entries) + " entries]");
 }
 
-void MainWnd::progressChanged(int value)
+void MainWnd::saveResult()
 {
-	if (value == m_progress->maximum())
-	{
-		m_le_find_phrase->setEnabled(true);
-		m_btnSearch->setEnabled(true);
-		m_progress->hide();
-		int count_entries = 0;
-		QTreeWidgetItemIterator it(m_tree_result, QTreeWidgetItemIterator::NoChildren);
-		while (*it) {
-			count_entries++;
-			++it;
-		}
-		m_lblResult->setText("Result: [" + QString::number(m_tree_result->topLevelItemCount()) + " files\t" + QString::number(count_entries) + " entries]");
-	}
+	// TODO
+}
+
+void MainWnd::loadResult()
+{
+	// TODO
 }
