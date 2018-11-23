@@ -64,27 +64,29 @@ MainWnd::MainWnd()
 
 MainWnd::~MainWnd()
 {
-	if (m_textsearch_watcher->isRunning())
+	if (m_textsearch_watcher)
 	{
-		m_textsearch_watcher->cancel();
-		m_textsearch_watcher->waitForFinished();
+		if (m_textsearch_watcher->isRunning())
+		{
+			m_textsearch_watcher->cancel();
+			m_textsearch_watcher->waitForFinished();
+		}
+		delete m_textsearch_watcher;
 	}
-	delete m_textsearch_watcher;
-	if (m_filesearch_watcher->isRunning())
+	if (m_filesearch_watcher)
 	{
-		m_filesearch_watcher->cancel();
-		m_filesearch_watcher->waitForFinished();
+		if (m_filesearch_watcher->isRunning())
+		{
+			m_filesearch_watcher->cancel();
+			m_filesearch_watcher->waitForFinished();
+		}
+		delete m_filesearch_watcher;
 	}
-	delete m_filesearch_watcher;
 }
 
 QVector<QFileInfo> MainWnd::serachFiles()
 {
 	// search files
-	int count_entries = 0;
-	m_tree_result->clear();
-	m_lblResult->setText("Result");
-
 	QVector<QFileInfo> list_file;
 	QDirIterator it(m_le_root_path->text(), QDirIterator::Subdirectories);
 	while (it.hasNext())
@@ -98,6 +100,22 @@ QVector<QFileInfo> MainWnd::serachFiles()
 	return list_file;
 }
 
+QVector<QFileInfo> MainWnd::collectFiles()
+{
+	QVector<QFileInfo> list_file;
+	QTreeWidgetItemIterator it(m_tree_result, QTreeWidgetItemIterator::HasChildren);
+	while (*it) {
+		QString abs_path = (*it)->data(0, Qt::UserRole).toString();
+		if (!abs_path.isEmpty())
+		{
+			QFileInfo finfo(abs_path);
+			list_file.push_back(finfo);
+		}
+		++it;
+	}
+	return list_file;
+}
+
 void MainWnd::browseDirectory()
 {
 	QString dir = QFileDialog::getExistingDirectory(this, tr("Open Directory"), "/home", QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
@@ -106,19 +124,26 @@ void MainWnd::browseDirectory()
 
 void MainWnd::startSearch()
 {
+	m_lblResult->setText("Result");
+
 	m_btnBrowse->setEnabled(false);
 	m_btnSearch->setEnabled(false);
 	m_le_find_phrase->setEnabled(false);
 	m_chb_deep->setEnabled(false);
 	m_progress->setVisible(true);
 
-	// TODO progressbar
+	m_progress->setRange(0, 0);
+	m_progress->setValue(1);
 
 	if (m_filesearch_watcher)
 		delete m_filesearch_watcher;
 	m_filesearch_watcher = new QFutureWatcher<QVector<QFileInfo>>;
 	connect(m_filesearch_watcher, SIGNAL(finished()), this, SLOT(searchFilesFinished()));
-	QFuture<QVector<QFileInfo>> future = QtConcurrent::run(this, &MainWnd::serachFiles);
+	QFuture<QVector<QFileInfo>> future;
+	if (m_chb_deep->isChecked())
+		future = QtConcurrent::run(this, &MainWnd::collectFiles);
+	else
+		future = QtConcurrent::run(this, &MainWnd::serachFiles);
 	m_filesearch_watcher->setFuture(future);
 }
 
@@ -130,6 +155,7 @@ void MainWnd::openDocument(QTreeWidgetItem * item, int column)
 
 void MainWnd::searchFilesFinished()
 {
+	m_tree_result->clear();
 	QVector<QFileInfo> list_file = m_filesearch_watcher->result();
 
 	// search in files

@@ -10,6 +10,7 @@ public:
 	~MainWnd();
 private:
 	QVector<QFileInfo> serachFiles();
+	QVector<QFileInfo> collectFiles();
 private:
 	QPushButton * m_btnBrowse;
 	QLineEdit * m_le_root_path;
