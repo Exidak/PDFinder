@@ -1,11 +1,14 @@
 #include "stdafx.h"
 #include "tmp\moc_MainWnd.cpp"
+#include "tmp\qrc_icons.cpp"
 
 // TODO result saving
 // TODO deep search
 
 MainWnd::MainWnd()
 {
+	Q_INIT_RESOURCE(icons);
+
 	QWidget *centralwidget = new QWidget(this);
 	setCentralWidget(centralwidget);
 
