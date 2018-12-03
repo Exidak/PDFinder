@@ -12,6 +12,7 @@ private:
 	QVector<QFileInfo> serachFiles();
 	QVector<QFileInfo> collectFiles();
 private:
+	QMenuBar * m_menu;
 	QPushButton * m_btnBrowse;
 	QLineEdit * m_le_root_path;
 	QLineEdit * m_le_find_phrase;

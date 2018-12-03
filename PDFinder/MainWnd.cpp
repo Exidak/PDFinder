@@ -9,15 +9,22 @@ MainWnd::MainWnd()
 	QWidget *centralwidget = new QWidget(this);
 	setCentralWidget(centralwidget);
 
+	m_menu = new QMenuBar(this);
+	m_menu->addAction(tr("Save"), this, &MainWnd::saveResult);
+	m_menu->addAction(tr("Load"), this, &MainWnd::loadResult);
+	setMenuBar(m_menu);
+
 	QVBoxLayout *ltMain = new QVBoxLayout(centralwidget);
 
-	QHBoxLayout *ltPath = new QHBoxLayout(this);
+	QGridLayout *lt_info = new QGridLayout(this);
+
+	//QHBoxLayout *ltPath = new QHBoxLayout(this);
 	QLabel *lblPath = new QLabel("Path", this);
 	m_le_root_path = new QLineEdit(this);
 	m_le_root_path->setReadOnly(true);
 	m_btnBrowse = new QPushButton("browse", this);
 
-	QHBoxLayout *lbPhrase = new QHBoxLayout(this);
+	//QHBoxLayout *lbPhrase = new QHBoxLayout(this);
 	QLabel *lblPhrase = new QLabel("Search for", this);
 	m_le_find_phrase = new QLineEdit(this);
 
@@ -33,16 +40,17 @@ MainWnd::MainWnd()
 	m_tree_result = new QTreeWidget(this);
 	m_tree_result->setHeaderHidden(true);
 
-	ltPath->addWidget(lblPath);
-	ltPath->addWidget(m_le_root_path);
-	ltPath->addWidget(m_btnBrowse);
+	lt_info->addWidget(lblPath, 0, 0);
+	lt_info->addWidget(m_le_root_path, 0, 1);
+	lt_info->addWidget(m_btnBrowse, 0, 2);
 
-	lbPhrase->addWidget(lblPhrase);
-	lbPhrase->addWidget(m_le_find_phrase);
-	lbPhrase->addWidget(m_chb_deep);
+	lt_info->addWidget(lblPhrase, 1, 0);
+	lt_info->addWidget(m_le_find_phrase, 1, 1);
+	lt_info->addWidget(m_chb_deep, 1, 2);
 
-	ltMain->addLayout(ltPath);
-	ltMain->addLayout(lbPhrase);
+	//ltMain->addLayout(ltPath);
+	//ltMain->addLayout(lbPhrase);
+	ltMain->addLayout(lt_info);
 	ltMain->addWidget(m_btnSearch);
 	ltMain->addWidget(m_lblResult);
 	ltMain->addWidget(m_progress);
@@ -60,7 +68,6 @@ MainWnd::MainWnd()
 #endif // DEBUG
 
 }
-
 
 MainWnd::~MainWnd()
 {
@@ -129,6 +136,7 @@ void MainWnd::startSearch()
 	m_btnBrowse->setEnabled(false);
 	m_btnSearch->setEnabled(false);
 	m_le_find_phrase->setEnabled(false);
+	m_menu->setEnabled(false);
 	m_chb_deep->setEnabled(false);
 	m_progress->setVisible(true);
 
@@ -202,7 +210,7 @@ void MainWnd::searchFilesFinished()
 				{
 					QTreeWidgetItem *item = new QTreeWidgetItem();
 					item->setText(0, file_path.fileName() + " [" + QString::number(children.size()) + "]");
-					item->setText(1, QString::number(children.size()));
+					//item->setText(1, QString::number(children.size()));
 					item->setData(0, Qt::UserRole, file_path.absoluteFilePath());
 					item->addChildren(children);
 					m_tree->addTopLevelItem(item);
@@ -238,6 +246,7 @@ void MainWnd::searchTextFinished()
 	m_btnBrowse->setEnabled(true);
 	m_le_find_phrase->setEnabled(true);
 	m_btnSearch->setEnabled(true);
+	m_menu->setEnabled(true);
 	m_chb_deep->setEnabled(true);
 	m_progress->setVisible(false);
 
@@ -252,10 +261,108 @@ void MainWnd::searchTextFinished()
 
 void MainWnd::saveResult()
 {
-	// TODO
+	QString fileName = QFileDialog::getSaveFileName(this, tr("Save results"), "/result", tr("Data (*.dat)"));
+	if (fileName.size())
+	{
+		// TODO: check if file exist and if yes ask to do replace
+
+		QDomDocument doc("Results");
+		QDomElement root = doc.createElement("Results");
+		doc.appendChild(root);
+
+		QDomElement tagPath = doc.createElement("SearchPath");
+		QDomText tPath = doc.createTextNode(m_le_root_path->text());
+		tagPath.appendChild(tPath);
+		root.appendChild(tagPath);
+
+		QDomElement tagPhrase = doc.createElement("SearchPhrase");
+		QDomText tPhrase = doc.createTextNode(m_le_find_phrase->text());
+		tagPhrase.appendChild(tPhrase);
+		tagPhrase.setAttribute("deep_search", m_chb_deep->checkState());
+		root.appendChild(tagPhrase);
+
+		QDomElement tagFilesList = doc.createElement("FilesList");
+		for (int indx = 0; indx < m_tree_result->topLevelItemCount(); ++indx)
+		{
+			QTreeWidgetItem *topItem = m_tree_result->topLevelItem(indx);
+			QDomElement tagFile = doc.createElement("File");
+			tagFile.setAttribute("path", topItem->data(0, Qt::UserRole).toString());
+			tagFile.setAttribute("text", topItem->text(0));
+			for (int indx_child = 0; indx_child < topItem->childCount(); ++indx_child)
+			{
+				QTreeWidgetItem *childItem = topItem->child(indx_child);
+				QDomElement tagEntry = doc.createElement("Entry");
+				QDomText tEntryText = doc.createTextNode(childItem->text(0));
+				tagEntry.appendChild(tEntryText);
+				tagFile.appendChild(tagEntry);
+			}
+			tagFilesList.appendChild(tagFile);
+		}
+		root.appendChild(tagFilesList);
+
+		QString xml = doc.toString();
+
+		QFile file(fileName);
+		if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+			return;
+		QTextStream stream(&file);
+		stream << xml;
+		file.close();
+	}
 }
 
 void MainWnd::loadResult()
 {
-	// TODO
+	QString fileName = QFileDialog::getOpenFileName(this, tr("Open results"), "/", tr("Data (*.dat)"));
+	QDomDocument doc("Results");
+	QFile file(fileName);
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+	{
+		QMessageBox::warning(this, "Load error", "Can't open the file!", QMessageBox::Ok, QMessageBox::Ok);
+		return;
+	}
+	if (!doc.setContent(&file)) {
+		file.close();
+		QMessageBox::warning(this, "Load error", "The file has incorrect format!", QMessageBox::Ok, QMessageBox::Ok);
+		return;
+	}
+	file.close();
+
+	m_tree_result->clear();
+
+	QDomElement root = doc.documentElement();
+
+	QDomElement tagPath = root.firstChildElement("SearchPath");
+	if (tagPath.isNull())
+	{
+		QMessageBox::warning(this, "Load error", "The file has incorrect format!", QMessageBox::Ok ,QMessageBox::Ok);
+		return;
+	}
+	m_le_root_path->setText(tagPath.text());
+
+	QDomElement tagPhrase = root.firstChildElement("SearchPhrase");
+	if (tagPhrase.isNull())
+	{
+		QMessageBox::warning(this, "Load error", "The file has incorrect format!", QMessageBox::Ok, QMessageBox::Ok);
+		return;
+	}
+	m_le_find_phrase->setText(tagPhrase.text());
+
+	QDomElement tagFileList = root.firstChildElement("FilesList");
+	if (tagFileList.isNull())
+	{
+		QMessageBox::warning(this, "Load error", "The file has incorrect format!", QMessageBox::Ok, QMessageBox::Ok);
+		return;
+	}
+	for (QDomElement tagFile = tagFileList.firstChildElement("File"); !tagFile.isNull(); tagFile = tagFile.nextSiblingElement("File"))
+	{
+		QTreeWidgetItem *topItem = new QTreeWidgetItem(m_tree_result);
+		topItem->setText(0, tagFile.attribute("text"));
+		topItem->setData(0, Qt::UserRole, tagFile.attribute("path"));
+		for (QDomElement tagEntry = tagFile.firstChildElement("Entry"); !tagEntry.isNull(); tagEntry = tagEntry.nextSiblingElement("Entry"))
+		{
+			QTreeWidgetItem *childItem = new QTreeWidgetItem(topItem);
+			childItem->setText(0, tagEntry.text());
+		}
+	}
 }
