@@ -24,6 +24,18 @@ private:
 
 	QFutureWatcher<QVector<QFileInfo>> *m_filesearch_watcher;
 	QFutureWatcher<void> *m_textsearch_watcher;
+
+	struct UndoData
+	{
+		int m_index;
+		QString m_parent_data;
+		QString m_text;
+		QString m_data_0;
+		QString m_data_1;
+		QStringList m_child_text;
+	};
+
+	QVector<UndoData> m_undo_stack;
 private slots:
 	void browseDirectory();
 	void startSearch();
@@ -34,5 +46,8 @@ private slots:
 
 	void saveResult();
 	void loadResult();
+
+	void hideResultLine();
+	void showLastHiddenLine();
 };
 

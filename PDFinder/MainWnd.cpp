@@ -55,8 +55,8 @@ MainWnd::MainWnd()
 	//ltMain->addLayout(lbPhrase);
 	ltMain->addLayout(lt_info);
 	ltMain->addWidget(m_btnSearch);
-	ltMain->addWidget(m_lblResult);
 	ltMain->addWidget(m_progress);
+	ltMain->addWidget(m_lblResult);
 	ltMain->addWidget(m_tree_result);
 
 	centralwidget->setLayout(ltMain);
@@ -65,9 +65,12 @@ MainWnd::MainWnd()
 	connect(m_btnSearch, &QPushButton::released, this, &MainWnd::startSearch);
 	connect(m_tree_result, &QTreeWidget::itemDoubleClicked, this, &MainWnd::openDocument);
 
+	QShortcut *sc_delete = new QShortcut(QKeySequence(Qt::Key_Delete), this, SLOT(hideResultLine()));
+	QShortcut* sc_undo = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_Z), this, SLOT(showLastHiddenLine()));
+
 #ifdef _DEBUG
-	m_le_find_phrase->setText("37");
-	m_le_root_path->setText("C:/Work/UpWork/PDFinder");
+	m_le_find_phrase->setText("Virginia");
+	m_le_root_path->setText("e:/MarkPdf/");
 #endif // DEBUG
 
 }
@@ -137,7 +140,7 @@ void MainWnd::startSearch()
 	m_lblResult->setText("Result");
 
 	m_btnBrowse->setEnabled(false);
-	m_btnSearch->setEnabled(false);
+	m_btnSearch->setVisible(false);
 	m_le_find_phrase->setEnabled(false);
 	m_menu->setEnabled(false);
 	m_chb_deep->setEnabled(false);
@@ -215,6 +218,7 @@ void MainWnd::searchFilesFinished()
 					item->setText(0, file_path.fileName() + " [" + QString::number(children.size()) + "]");
 					//item->setText(1, QString::number(children.size()));
 					item->setData(0, Qt::UserRole, file_path.absoluteFilePath());
+					item->setData(1, Qt::UserRole, file_path.fileName());
 					item->addChildren(children);
 					m_tree->addTopLevelItem(item);
 				}
@@ -248,7 +252,7 @@ void MainWnd::searchTextFinished()
 {
 	m_btnBrowse->setEnabled(true);
 	m_le_find_phrase->setEnabled(true);
-	m_btnSearch->setEnabled(true);
+	m_btnSearch->setVisible(true);
 	m_menu->setEnabled(true);
 	m_chb_deep->setEnabled(true);
 	m_progress->setVisible(false);
@@ -290,6 +294,7 @@ void MainWnd::saveResult()
 			QTreeWidgetItem *topItem = m_tree_result->topLevelItem(indx);
 			QDomElement tagFile = doc.createElement("File");
 			tagFile.setAttribute("path", topItem->data(0, Qt::UserRole).toString());
+			tagFile.setAttribute("rel_path", topItem->data(1, Qt::UserRole).toString());
 			tagFile.setAttribute("text", topItem->text(0));
 			for (int indx_child = 0; indx_child < topItem->childCount(); ++indx_child)
 			{
@@ -362,10 +367,90 @@ void MainWnd::loadResult()
 		QTreeWidgetItem *topItem = new QTreeWidgetItem(m_tree_result);
 		topItem->setText(0, tagFile.attribute("text"));
 		topItem->setData(0, Qt::UserRole, tagFile.attribute("path"));
+		topItem->setData(1, Qt::UserRole, tagFile.attribute("rel_path"));
 		for (QDomElement tagEntry = tagFile.firstChildElement("Entry"); !tagEntry.isNull(); tagEntry = tagEntry.nextSiblingElement("Entry"))
 		{
 			QTreeWidgetItem *childItem = new QTreeWidgetItem(topItem);
 			childItem->setText(0, tagEntry.text());
+		}
+	}
+}
+
+void MainWnd::hideResultLine()
+{
+	QTreeWidgetItem* cur = m_tree_result->currentItem();
+	if (cur)
+	{
+		QTreeWidgetItem* parent = cur->parent();
+		if (parent)
+		{
+			UndoData dt;
+			dt.m_index = parent->indexOfChild(cur);
+			dt.m_parent_data = parent->data(0, Qt::UserRole).toString();
+			dt.m_text = cur->text(0);
+			m_undo_stack.push_back(dt);
+
+			parent->removeChild(cur);
+			parent->setText(0, parent->data(1, Qt::UserRole).toString() + " [" +
+				QString::number(parent->childCount()) + "]");
+		}
+		else
+		{
+			UndoData dt;
+			dt.m_index = m_tree_result->indexOfTopLevelItem(cur);
+			dt.m_text = cur->text(0);
+			dt.m_data_0 = cur->data(0, Qt::UserRole).toString();
+			dt.m_data_1 = cur->data(1, Qt::UserRole).toString();
+			for (int i = 0; i < cur->childCount(); ++i)
+				dt.m_child_text.push_back(cur->child(i)->text(0));
+			m_undo_stack.push_back(dt);
+
+			delete cur;
+		}
+	}
+}
+
+void MainWnd::showLastHiddenLine()
+{
+	if (!m_undo_stack.isEmpty())
+	{
+		UndoData dt = m_undo_stack.takeLast();
+		if (dt.m_parent_data.isEmpty())
+		{
+			QTreeWidgetItem* item = new QTreeWidgetItem();
+			item->setText(0, dt.m_text);
+			item->setData(0, Qt::UserRole, dt.m_data_0);
+			item->setData(1, Qt::UserRole, dt.m_data_1);
+
+			QList<QTreeWidgetItem*> children;
+			for (int i = 0; i < dt.m_child_text.size(); ++i)
+			{
+				QTreeWidgetItem* childitem = new QTreeWidgetItem();
+				childitem->setText(0, dt.m_child_text.at(i));
+				children.push_back(childitem);
+			}
+			item->addChildren(children);
+
+			m_tree_result->insertTopLevelItem(dt.m_index, item);
+		}
+		else
+		{
+			QTreeWidgetItem* item = new QTreeWidgetItem();
+			item->setText(0, dt.m_text);
+
+			for (int indx = 0; indx < m_tree_result->topLevelItemCount(); ++indx)
+			{
+				QTreeWidgetItem *parent = m_tree_result->topLevelItem(indx);
+				if (dt.m_parent_data == parent->data(0, Qt::UserRole))
+				{
+					parent->insertChild(dt.m_index, item);
+
+					parent->setText(0, parent->data(1, Qt::UserRole).toString() + " [" +
+						QString::number(parent->childCount()) + "]");
+
+					break;
+				}
+			}
 		}
 	}
 }
