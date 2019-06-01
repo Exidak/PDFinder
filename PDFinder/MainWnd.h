@@ -49,5 +49,6 @@ private slots:
 
 	void hideResultLine();
 	void showLastHiddenLine();
+	void highlightItem();
 };
 

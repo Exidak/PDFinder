@@ -67,6 +67,7 @@ MainWnd::MainWnd()
 
 	QShortcut *sc_delete = new QShortcut(QKeySequence(Qt::Key_Delete), this, SLOT(hideResultLine()));
 	QShortcut* sc_undo = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_Z), this, SLOT(showLastHiddenLine()));
+	QShortcut* sc_highlight = new QShortcut(QKeySequence(Qt::Key_H), this, SLOT(highlightItem()));
 
 #ifdef _DEBUG
 	m_le_find_phrase->setText("Virginia");
@@ -452,5 +453,17 @@ void MainWnd::showLastHiddenLine()
 				}
 			}
 		}
+	}
+}
+
+void MainWnd::highlightItem()
+{
+	QTreeWidgetItem* cur = m_tree_result->currentItem();
+	if (cur)
+	{
+		if (cur->background(0) == QBrush(Qt::yellow))
+			cur->setBackground(0, QBrush(Qt::white));
+		else
+			cur->setBackground(0, QBrush(Qt::yellow));
 	}
 }
