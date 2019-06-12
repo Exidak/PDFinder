@@ -68,6 +68,10 @@ MainWnd::MainWnd()
 	QShortcut *sc_delete = new QShortcut(QKeySequence(Qt::Key_Delete), this, SLOT(hideResultLine()));
 	QShortcut* sc_undo = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_Z), this, SLOT(showLastHiddenLine()));
 	QShortcut* sc_highlight = new QShortcut(QKeySequence(Qt::Key_H), this, SLOT(highlightItem()));
+	QShortcut* sc_unhighlight = new QShortcut(QKeySequence(Qt::Key_U), this, SLOT(unhighlightItem()));
+	QShortcut* sc_edittext = new QShortcut(QKeySequence(Qt::Key_E), this, SLOT(editItemText()));
+
+	m_tree_result->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
 #ifdef _DEBUG
 	m_le_find_phrase->setText("Virginia");
@@ -164,8 +168,12 @@ void MainWnd::startSearch()
 
 void MainWnd::openDocument(QTreeWidgetItem * item, int column)
 {
-	qDebug() << "file:///" + item->data(0, Qt::UserRole).toString();
-	QDesktopServices::openUrl(QUrl("file:///" + item->data(0, Qt::UserRole).toString(), QUrl::TolerantMode));
+	if (!item->parent())
+	{
+		QString str_file_url = "file:///" + item->data(0, Qt::UserRole).toString();
+		qDebug() << str_file_url;
+		QDesktopServices::openUrl(QUrl(str_file_url, QUrl::TolerantMode));
+	}
 }
 
 void MainWnd::searchFilesFinished()
@@ -208,6 +216,7 @@ void MainWnd::searchFilesFinished()
 					{
 						QTreeWidgetItem *childitem = new QTreeWidgetItem();
 						childitem->setText(0, line);
+						childitem->setFlags(childitem->flags() | Qt::ItemIsEditable);
 						children.push_back(childitem);
 					}
 				} while (!line.isNull());
@@ -297,10 +306,14 @@ void MainWnd::saveResult()
 			tagFile.setAttribute("path", topItem->data(0, Qt::UserRole).toString());
 			tagFile.setAttribute("rel_path", topItem->data(1, Qt::UserRole).toString());
 			tagFile.setAttribute("text", topItem->text(0));
+			if (topItem->background(0) == QBrush(Qt::yellow))
+				tagFile.setAttribute("highlight", "yes");
 			for (int indx_child = 0; indx_child < topItem->childCount(); ++indx_child)
 			{
 				QTreeWidgetItem *childItem = topItem->child(indx_child);
 				QDomElement tagEntry = doc.createElement("Entry");
+				if (childItem->background(0) == QBrush(Qt::yellow))
+					tagEntry.setAttribute("highlight", "yes");
 				QDomText tEntryText = doc.createTextNode(childItem->text(0));
 				tagEntry.appendChild(tEntryText);
 				tagFile.appendChild(tagEntry);
@@ -369,10 +382,17 @@ void MainWnd::loadResult()
 		topItem->setText(0, tagFile.attribute("text"));
 		topItem->setData(0, Qt::UserRole, tagFile.attribute("path"));
 		topItem->setData(1, Qt::UserRole, tagFile.attribute("rel_path"));
+		if (tagFile.hasAttribute("highlight"))
+			if (tagFile.attribute("highlight") == "yes")
+				topItem->setBackground(0, QBrush(Qt::yellow));
 		for (QDomElement tagEntry = tagFile.firstChildElement("Entry"); !tagEntry.isNull(); tagEntry = tagEntry.nextSiblingElement("Entry"))
 		{
 			QTreeWidgetItem *childItem = new QTreeWidgetItem(topItem);
 			childItem->setText(0, tagEntry.text());
+			childItem->setFlags(childItem->flags() | Qt::ItemIsEditable);
+			if (tagEntry.hasAttribute("highlight"))
+				if (tagEntry.attribute("highlight") == "yes")
+					childItem->setBackground(0, QBrush(Qt::yellow));
 		}
 	}
 }
@@ -460,10 +480,19 @@ void MainWnd::highlightItem()
 {
 	QTreeWidgetItem* cur = m_tree_result->currentItem();
 	if (cur)
-	{
-		if (cur->background(0) == QBrush(Qt::yellow))
-			cur->setBackground(0, QBrush(Qt::white));
-		else
-			cur->setBackground(0, QBrush(Qt::yellow));
-	}
+		cur->setBackground(0, QBrush(Qt::yellow));
+}
+
+void MainWnd::unhighlightItem()
+{
+	QTreeWidgetItem* cur = m_tree_result->currentItem();
+	if (cur)
+		cur->setBackground(0, QBrush(Qt::transparent));
+}
+
+void MainWnd::editItemText()
+{
+	QTreeWidgetItem* cur = m_tree_result->currentItem();
+	if (cur && cur->parent())
+		m_tree_result->editItem(cur);
 }
